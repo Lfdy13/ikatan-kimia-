@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChemBond: Interactive Chemical Bonding</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: linear-gradient(135deg, #4CAF50, #2196F3); color: white; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { text-align: center; margin-bottom: 10px; }
+        .score { text-align: center; font-size: 20px; margin-bottom: 20px; }
+        .game-area { display: flex; gap: 20px; margin-bottom: 20px; }
+        .panel { background: rgba(255,255,255,0.1); padding: 20px; border-radius: 10px; }
+        .atoms-panel { width: 200px; }
+        .reaction-zone { flex: 1; min-height: 300px; border: 3px dashed rgba(255,255,255,0.5); position: relative; }
+        .atom { width: 50px; height: 50px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; cursor: grab; margin: 5px; border: 2px solid white; user-select: none; }
+        .atom:active { cursor: grabbing; }
+        .Na { background: #FFD700; color: black; }
+        .Cl { background: #32CD32; color: black; }
+        .H { background: #FF6B6B; color: white; }
+        .O { background: #4ECDC4; color: white; }
+        .Mg { background: #FFA500; color: black; }
+        .bonding-display { text-align: center; margin: 20px 0; }
+        .electron-visual { font-size: 24px; margin: 10px 0; }
+        .explanation { background: rgba(255,255,255,0.15); padding: 15px; border-radius: 8px; margin: 20px 0; display: none; }
+        .explanation.show { display: block; }
+        .question-panel { background: rgba(255,255,255,0.15); padding: 20px; border-radius: 10px; display: none; }
+        .question-panel.show { display: block; }
+        .options { display: flex; gap: 10px; margin: 15px 0; }
+        .option-btn { padding: 10px 15px; background: rgba(255,255,255,0.2); border: 2px solid white; border-radius: 5px; cursor: pointer; color: white; }
+        .option-btn:hover { background: rgba(255,255,255,0.3); }
+        .option-btn.correct { background: #4CAF50; }
+        .option-btn.wrong { background: #f44336; }
+        .feedback { margin: 15px 0; font-weight: bold; }
+        .reset-btn { background: #FF6B6B; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; }
+        .drop-hint { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); opacity: 0.6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 ChemBond: How Chemical Bonds Form</h1>
+        <div class="score">Score: <span id="score">0</span></div>
+        
+        <div class="game-area">
+            <div class="atoms-panel panel">
+                <h3>Drag Atoms</h3>
+                <div id="atomsContainer"></div>
+            </div>
+            
+            <div class="reaction-zone panel" id="reactionZone">
+                <h3>Reaction Zone</h3>
+                <div class="drop-hint">Drop two atoms here to see how they bond!</div>
+                <div class="bonding-display" id="bondingDisplay"></div>
+            </div>
+        </div>
+        
+        <div class="explanation" id="explanation">
+            <h3>How This Bond Forms:</h3>
+            <div id="explanationText"></div>
+            <div class="electron-visual" id="electronVisual"></div>
+        </div>
+        
+        <div class="question-panel" id="questionPanel">
+            <h3>What type of bond is formed?</h3>
+            <div class="options">
+                <button class="option-btn" onclick="checkAnswer('ionic')">Ionic Bond</button>
+                <button class="option-btn" onclick="checkAnswer('covalent')">Covalent Bond</button>
+                <button class="option-btn" onclick="checkAnswer('metallic')">Metallic Bond</button>
+            </div>
+            <div class="feedback" id="feedback"></div>
+            <button class="reset-btn" onclick="resetGame()">Try Another Combination</button>
+        </div>
+    </div>
+
+    <script>
+        // Game state
+        let score = 0;
+        let droppedAtoms = [];
+        let correctAnswer = '';
+
+        // Atom properties for bond determination
+        const atoms = {
+            'Na': { name: 'Sodium', type: 'metal', electronegativity: 0.9 },
+            'Cl': { name: 'Chlorine', type: 'nonmetal', electronegativity: 3.0 },
+            'H': { name: 'Hydrogen', type: 'nonmetal', electronegativity: 2.1 },
+            'O': { name: 'Oxygen', type: 'nonmetal', electronegativity: 3.5 },
+            'Mg': { name: 'Magnesium', type: 'metal', electronegativity: 1.2 }
+        };
+
+        // Initialize game
+        function init() {
+            createAtoms();
+            setupDragDrop();
+        }
+
+        // Create draggable atoms
+        function createAtoms() {
+            const container = document.getElementById('atomsContainer');
+            Object.keys(atoms).forEach(symbol => {
+                const atom = document.createElement('div');
+                atom.className = `atom ${symbol}`;
+                atom.textContent = symbol;
+                atom.draggable = true;
+                atom.dataset.symbol = symbol;
+                container.appendChild(atom);
+            });
+        }
+
+        // Setup drag and drop
+        function setupDragDrop() {
+            document.querySelectorAll('.atom').forEach(atom => {
+                atom.ondragstart = (e) => e.dataTransfer.setData('text', e.target.dataset.symbol);
+            });
+
+            const zone = document.getElementById('reactionZone');
+            zone.ondragover = (e) => e.preventDefault();
+            zone.ondrop = (e) => {
+                e.preventDefault();
+                const symbol = e.dataTransfer.getData('text');
+                addAtom(symbol);
+            };
+        }
+
+        // Add atom to reaction zone
+        function addAtom(symbol) {
+            if (droppedAtoms.length < 2 && !droppedAtoms.includes(symbol)) {
+                droppedAtoms.push(symbol);
+                updateDisplay();
+                
+                if (droppedAtoms.length === 2) {
+                    setTimeout(() => showBondingProcess(), 500);
+                }
+            }
+        }
+
+        // Update visual display
+        function updateDisplay() {
+            const display = document.getElementById('bondingDisplay');
+            display.innerHTML = droppedAtoms.map(symbol => 
+                `<div class="atom ${symbol}" style="display: inline-flex; margin: 10px;">${symbol}</div>`
+            ).join(droppedAtoms.length === 2 ? '<span style="font-size: 30px; margin: 0 20px;">→</span>' : '');
+        }
+
+        // Show bonding process and explanation
+        function showBondingProcess() {
+            const [atom1, atom2] = droppedAtoms;
+            const bondType = determineBondType(atom1, atom2);
+            correctAnswer = bondType;
+            
+            showExplanation(atom1, atom2, bondType);
+            setTimeout(() => showQuestion(), 2000);
+        }
+
+        // Determine bond type based on atom properties
+        function determineBondType(atom1, atom2) {
+            const type1 = atoms[atom1].type;
+            const type2 = atoms[atom2].type;
+            const electroDiff = Math.abs(atoms[atom1].electronegativity - atoms[atom2].electronegativity);
+            
+            if (type1 === 'metal' && type2 === 'metal') return 'metallic';
+            if (electroDiff > 1.7) return 'ionic';
+            return 'covalent';
+        }
+
+        // Show detailed explanation
+        function showExplanation(atom1, atom2, bondType) {
+            const explanation = document.getElementById('explanation');
+            const text = document.getElementById('explanationText');
+            const visual = document.getElementById('electronVisual');
+            
+            explanation.classList.add('show');
+            
+            if (bondType === 'ionic') {
+                text.innerHTML = `<strong>${atoms[atom1].name}</strong> donates electrons to <strong>${atoms[atom2].name}</strong>. This creates charged ions that attract each other.`;
+                visual.innerHTML = `${atom1} → e⁻ → ${atom2} &nbsp;&nbsp; (${atom1}⁺ attracts ${atom2}⁻)`;
+            } else if (bondType === 'covalent') {
+                text.innerHTML = `<strong>${atoms[atom1].name}</strong> and <strong>${atoms[atom2].name}</strong> share electrons equally between them.`;
+                visual.innerHTML = `${atom1} : : ${atom2} &nbsp;&nbsp; (shared electron pairs)`;
+            } else {
+                text.innerHTML = `<strong>${atoms[atom1].name}</strong> and <strong>${atoms[atom2].name}</strong> form a "sea of electrons" that moves freely between metal atoms.`;
+                visual.innerHTML = `${atom1} ⟷ e⁻ ⟷ ${atom2} &nbsp;&nbsp; (mobile electrons)`;
+            }
+        }
+
+        // Show question panel
+        function showQuestion() {
+            document.getElementById('questionPanel').classList.add('show');
+            
+            // Reset buttons
+            document.querySelectorAll('.option-btn').forEach(btn => {
+                btn.classList.remove('correct', 'wrong');
+                btn.disabled = false;
+            });
+            document.getElementById('feedback').innerHTML = '';
+        }
+
+        // Check answer
+        function checkAnswer(answer) {
+            const buttons = document.querySelectorAll('.option-btn');
+            const feedback = document.getElementById('feedback');
+            
+            buttons.forEach(btn => btn.disabled = true);
+            
+            if (answer === correctAnswer) {
+                score += 10;
+                feedback.innerHTML = '✅ Correct! Great understanding of chemical bonding!';
+                feedback.style.color = '#4CAF50';
+                event.target.classList.add('correct');
+            } else {
+                score -= 5;
+                feedback.innerHTML = `❌ Not quite. The correct answer is <strong>${correctAnswer}</strong> bond.`;
+                feedback.style.color = '#f44336';
+                event.target.classList.add('wrong');
+                
+                // Highlight correct answer
+                buttons.forEach(btn => {
+                    if (btn.textContent.toLowerCase().includes(correctAnswer)) {
+                        btn.classList.add('correct');
+                    }
+                });
+            }
+            
+            document.getElementById('score').textContent = score;
+        }
+
+        // Reset game
+        function resetGame() {
+            droppedAtoms = [];
+            document.getElementById('bondingDisplay').innerHTML = '';
+            document.getElementById('explanation').classList.remove('show');
+            document.getElementById('questionPanel').classList.remove('show');
+        }
+
+        // Start game
+        init();
+    </script>
+</body>
+</html>
